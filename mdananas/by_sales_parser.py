@@ -1,8 +1,24 @@
-from pathlib import Path
-from tkinter import Tk, filedialog
+from dataclasses import dataclass
+from io import BytesIO
+from math import isfinite
+from typing import Protocol
 
 import pandas as pd
 import xlrd
+
+
+class BYSalesParseError(ValueError):
+    """The uploaded file is not a valid Belarus sales report."""
+
+
+class BinaryReader(Protocol):
+    def read(self) -> bytes: ...
+
+
+@dataclass
+class BYSalesParseResult:
+    records: pd.DataFrame
+    checked_months: tuple[int, ...]
 
 
 def address_key(value):
@@ -11,13 +27,6 @@ def address_key(value):
 
 def sku_key(value):
     return str(value).strip().strip('"').strip()
-
-
-def choose_file(title, filetypes):
-    path = filedialog.askopenfilename(title=title, filetypes=filetypes)
-    if not path:
-        raise SystemExit(f"Файл не выбран: {title}")
-    return Path(path)
 
 
 def read_stores_csv(path):
@@ -70,29 +79,25 @@ def read_sku_csv(path):
     return skus
 
 
-def main():
-    root = Tk()
-    root.withdraw()
+def parse_by_sales(source: bytes | BinaryReader) -> BYSalesParseResult:
+    """Parse and reconcile an uploaded .xls report without reference lookups or writes."""
+    data = source if isinstance(source, bytes) else source.read()
+    if not data:
+        raise BYSalesParseError("Файл пуст. Выберите исходный отчёт .xls.")
     try:
-        excel_path = choose_file("1/3: выбери сэмпер_август.xls", [("Excel XLS", "*.xls")])
-        stores_path = choose_file("2/3: выбери by_stores_reference.csv", [("CSV", "*.csv")])
-        sku_path = choose_file("3/3: выбери by_sku_cu.csv", [("CSV", "*.csv")])
-    finally:
-        root.destroy()
-
-    df = pd.read_excel(excel_path, header=None, engine="xlrd")
-    book = xlrd.open_workbook(str(excel_path), formatting_info=True)
-    sheet = book.sheet_by_index(0)
-    print("Размер Excel:", df.shape)
+        book = xlrd.open_workbook(file_contents=data, formatting_info=True)
+        df = pd.read_excel(BytesIO(data), header=None, engine="xlrd")
+        sheet = book.sheet_by_index(0)
+    except (xlrd.XLRDError, ValueError, OSError, IndexError) as exc:
+        raise BYSalesParseError("Не удалось прочитать файл .xls. Проверьте формат отчёта.") from exc
 
     if df.shape[0] <= 8 or df.shape[1] < 18:
-        raise ValueError("Файл не похож на ожидаемый отчёт")
+        raise BYSalesParseError("Файл не похож на ожидаемый отчёт.")
 
     sku_mask = pd.to_numeric(df.iloc[:, 5], errors="coerce").notna()
     sku_indices = set(df.index[sku_mask & (df.index >= 8)].tolist())
-    print("Товарных строк:", len(sku_indices))
     if not sku_indices:
-        raise ValueError("Не удалось найти товарные строки в Excel")
+        raise BYSalesParseError("Не удалось найти товарные строки в Excel.")
 
     parents = {}
     locations = {}
@@ -109,7 +114,7 @@ def main():
     if len(locations) != len(sku_indices) or any(
         buyer is None or store is None for buyer, store in locations.values()
     ):
-        raise ValueError("Не для всех товаров удалось найти покупателя и магазин")
+        raise BYSalesParseError("Не для всех товаров удалось найти покупателя и магазин.")
 
     rows = []
     for i in sorted(sku_indices):
@@ -117,7 +122,7 @@ def main():
         buyer = df.iat[buyer_row, 2]
         store = df.iat[store_row, 2]
         if pd.isna(buyer) or pd.isna(store):
-            raise ValueError("Есть товар без названия покупателя или магазина")
+            raise BYSalesParseError("Есть товар без названия покупателя или магазина.")
         for month in range(3, 9):
             qty = df.iat[i, 2 * month]
             amount = df.iat[i, 2 * month + 1]
@@ -132,19 +137,27 @@ def main():
         converted = pd.to_numeric(out[field], errors="coerce")
         lost = int((out[field].notna() & converted.isna()).sum())
         if lost:
-            raise ValueError(f"Не удалось превратить в числа значения {field}: {lost}")
+            raise BYSalesParseError(f"Не удалось превратить в числа значения {field}: {lost}")
         out[field] = converted
 
     for month in range(3, 9):
         part = out[out["month"] == month]
-        qty_diff = part["qty"].sum() - float(df.iat[6, 2 * month])
-        amount_diff = part["amount"].sum() - float(df.iat[6, 2 * month + 1])
-        print(f"Месяц {month}: разница кол-ва={qty_diff:.2f}, суммы={amount_diff:.2f}")
+        try:
+            qty_diff = part["qty"].sum() - float(df.iat[6, 2 * month])
+            amount_diff = part["amount"].sum() - float(df.iat[6, 2 * month + 1])
+        except (TypeError, ValueError) as exc:
+            raise BYSalesParseError(f"Некорректные итоги за месяц {month}.") from exc
+        if not isfinite(qty_diff) or not isfinite(amount_diff):
+            raise BYSalesParseError(f"Некорректные итоги за месяц {month}.")
         if abs(qty_diff) > 0.01 or abs(amount_diff) > 0.01:
-            raise ValueError(f"Итоги за месяц {month} не совпали")
+            raise BYSalesParseError(f"Итоги за месяц {month} не совпали.")
 
-    stores = read_stores_csv(stores_path)
-    sku_ref = read_sku_csv(sku_path)
+    return BYSalesParseResult(records=out, checked_months=tuple(range(3, 9)))
+
+
+def match_sales_references(records: pd.DataFrame, stores: pd.DataFrame, sku_ref: pd.DataFrame) -> pd.DataFrame:
+    """Optional reference matching, kept separate from Excel parsing."""
+    out = records.copy()
     store_to_id = dict(zip(stores["key"], stores["id"]))
     sku_to_id = dict(zip(sku_ref["material"], sku_ref["id"].astype(int)))
     out["by_store_id"] = out["store"].map(
@@ -154,23 +167,4 @@ def main():
 
     if out["by_store_id"].isna().any() or out["by_pivot_sku_id"].isna().any():
         raise ValueError("У некоторых продаж не найден ID магазина или товара")
-
-    used_skus = sku_ref[sku_ref["material"].isin(out["sku"].unique())]
-    linked = pd.to_numeric(
-        used_skus["root_cu_id"].str.strip(' "'), errors="coerce"
-    ).notna()
-
-    print("Итоговых помесячных записей:", len(out))
-    print("Уникальных SKU:", out["sku"].nunique())
-    print("Уникальных магазинов:", out["by_store_id"].nunique())
-    print("SKU со связью CU:", int(linked.sum()))
-    print("SKU без связи CU:", int((~linked).sum()))
-
-    output_path = excel_path.with_name(excel_path.stem + "_processed.xlsx")
-    out.to_excel(output_path, index=False)
-    print("Готовая таблица сохранена:", output_path)
-    print("Готово: в SQL Server ничего не записывалось.")
-
-
-if __name__ == "__main__":
-    main()
+    return out

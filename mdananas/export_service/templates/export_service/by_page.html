@@ -28,8 +28,17 @@
         </div>
         {% if notice %}
             <p role="status">{{ notice }}</p>
+            <dl>
+                <dt>Записей</dt><dd>{{ summary.record_count }}</dd>
+                <dt>Уникальных SKU</dt><dd>{{ summary.sku_count }}</dd>
+                <dt>Уникальных магазинов</dt><dd>{{ summary.store_count }}</dd>
+                <dt>Месяцы отчёта</dt><dd>{{ summary.months }}</dd>
+                <dt>Сверка итогов</dt><dd>{{ summary.reconciliation }}</dd>
+            </dl>
+        {% elif error %}
+            <p role="alert">{{ error }}</p>
         {% else %}
-            <p>Обработка файла и запись в базу будут подключены на следующем этапе. Сейчас отправка файла не загружает данные.</p>
+            <p>Выберите исходный файл .xls для проверки продаж без загрузки в базу.</p>
         {% endif %}
     </div>
 {% endblock %}
