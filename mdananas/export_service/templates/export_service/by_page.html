@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Беларусь — продажи{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'domestic_service/dm/css/dm.css' %}">
+{% endblock %}
+
+{% block content %}
+    <div>
+        <h1>Беларусь</h1>
+        <p>Загрузка продаж из исходного Excel-файла .xls</p>
+        <div class="upload-container-long">
+            <div class="upload-tab">
+                <div class="upload-tab-label"><p>Sales</p></div>
+                <div class="upload-tab-content">
+                    <form method="post" enctype="multipart/form-data" id="by-sales-file-upload-form">
+                        {% csrf_token %}
+                        <p>{{ form.file.label_tag }} {{ form.file }}</p>
+                        {% if form.file.errors %}
+                            <div role="alert">{{ form.file.errors }}</div>
+                        {% endif %}
+                        <button type="submit">Отправить файл</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% if notice %}
+            <p role="status">{{ notice }}</p>
+        {% else %}
+            <p>Обработка файла и запись в базу будут подключены на следующем этапе. Сейчас отправка файла не загружает данные.</p>
+        {% endif %}
+    </div>
+{% endblock %}

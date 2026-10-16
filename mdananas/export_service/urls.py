@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import kg_views, uz_views
+from .views import by_views, kg_views, uz_views
 
 urlpatterns = [
     path('', kg_views.main_page, name='main_page'),
@@ -9,4 +9,5 @@ urlpatterns = [
     path('kg/save-competitors-sku/', kg_views.kg_page_save_competitors_sku, name='kg_page_save_competitors_sku'),
     path('uz/', uz_views.uz_page, name='uz_page'),
     path('uz/get-progress/', uz_views.get_progress, name='get_progress'),
+    path('by/', by_views.by_page, name='by_page'),
 ]
