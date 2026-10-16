@@ -168,3 +168,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 PRICEVA_EXPORT_URL = os.environ.get("PRICEVA_EXPORT_URL", 'https://api.priceva.ru/export?f=ei7/2jw/vCTkK1rtbWOfHhrt0AwY1QUa0Nrx7aO7')
 PRICEM_POLL_SECONDS = 15
 PRICEM_RETRY_DELAYS = (60, 300, 900)
+BY_SQL_DRY_RUN_ENABLED = False
+BY_SQL_SCHEMA_CONFIRMED = False
