@@ -21,7 +21,12 @@
                         {% if form.file.errors %}
                             <div role="alert">{{ form.file.errors }}</div>
                         {% endif %}
-                        <button type="submit">Отправить файл</button>
+                        <p>{{ form.year.label_tag }} {{ form.year }}</p>
+                        {% if form.year.errors %}
+                            <div role="alert">{{ form.year.errors }}</div>
+                        {% endif %}
+                        <button type="submit" name="action" value="parse">Проверить Excel</button>
+                        <button type="submit" name="action" value="sql_preview">Предварительная проверка в SQL</button>
                     </form>
                 </div>
             </div>
@@ -35,6 +40,13 @@
                 <dt>Месяцы отчёта</dt><dd>{{ summary.months }}</dd>
                 <dt>Сверка итогов</dt><dd>{{ summary.reconciliation }}</dd>
             </dl>
+            {% if sql_preview %}
+                <h2>Предварительная проверка в SQL</h2>
+                <dl>
+                    <dt>Строк показателей</dt><dd>{{ sql_preview.input_measure_rows }}</dd>
+                    <dt>Предлагаемых строк продаж</dt><dd>{{ sql_preview.proposed_sales_rows }}</dd>
+                </dl>
+            {% endif %}
         {% elif error %}
             <p role="alert">{{ error }}</p>
         {% else %}
