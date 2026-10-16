@@ -123,15 +123,18 @@ def parse_by_sales(source: bytes | BinaryReader) -> BYSalesParseResult:
         store = df.iat[store_row, 2]
         if pd.isna(buyer) or pd.isna(store):
             raise BYSalesParseError("Есть товар без названия покупателя или магазина.")
+        material_desc = df.iat[i, 2]
+        if not isinstance(material_desc, str) or not material_desc.strip():
+            raise BYSalesParseError("Есть товар без описания в колонке C.")
         for month in range(3, 9):
             qty = df.iat[i, 2 * month]
             amount = df.iat[i, 2 * month + 1]
             if pd.notna(qty) or pd.notna(amount):
-                rows.append((buyer, store, sku_key(df.iat[i, 5]), month, qty, amount))
+                rows.append((buyer, store, sku_key(df.iat[i, 5]), month, qty, amount, material_desc))
 
     out = pd.DataFrame(
         rows,
-        columns=["buyer", "store", "sku", "month", "qty", "amount"],
+        columns=["buyer", "store", "sku", "month", "qty", "amount", "material_desc"],
     )
     for field in ("qty", "amount"):
         converted = pd.to_numeric(out[field], errors="coerce")
@@ -153,6 +156,25 @@ def parse_by_sales(source: bytes | BinaryReader) -> BYSalesParseResult:
             raise BYSalesParseError(f"Итоги за месяц {month} не совпали.")
 
     return BYSalesParseResult(records=out, checked_months=tuple(range(3, 9)))
+
+
+def to_by_tmp_sales(records: pd.DataFrame, *, year: int, chain: str | None = None) -> pd.DataFrame:
+    """Shape parsed sales for BY_TMP_Sales in memory, without resolving references."""
+    if type(year) is not int or not 1 <= year <= 9999:
+        raise ValueError("Год отчёта должен быть передан явно целым числом от 1 до 9999.")
+
+    rows = []
+    for sale in records.itertuples(index=False):
+        base = (year, sale.month, sale.store, chain, sale.sku, sale.material_desc)
+        if pd.notna(sale.qty):
+            rows.append((*base, "volume", sale.qty))
+        if pd.notna(sale.amount):
+            rows.append((*base, "fact_price_value", sale.amount))
+
+    return pd.DataFrame(
+        rows,
+        columns=["date_year", "date_month", "store_by", "chain", "material", "material_desc", "measure", "value"],
+    )
 
 
 def match_sales_references(records: pd.DataFrame, stores: pd.DataFrame, sku_ref: pd.DataFrame) -> pd.DataFrame:
